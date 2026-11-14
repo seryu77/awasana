@@ -24,7 +24,7 @@ trap cleanup EXIT INT TERM
 (cd "$ROOT/frontend" && npm run dev -- --host 127.0.0.1) &
 
 echo
-echo "  Waspada Nusantara berjalan:  http://localhost:5173"
+echo "  Awasana berjalan:            http://localhost:5173"
 echo "  API backend:                 http://localhost:8000/api/health"
 echo
 wait

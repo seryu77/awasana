@@ -1,27 +1,61 @@
-# Waspada Nusantara
+# Awasana
 
 Peta real-time kondisi darurat Indonesia. Satu layar menampilkan semua peringatan aktif (karhutla, banjir, gempa, longsor, kecelakaan, gunung api, kriminal), deteksi otomatis dari CCTV publik dengan computer vision, verifikasi AI dua tahap untuk menekan false alarm, dan alur dispatch ke command center 112 dengan operator tetap memegang keputusan.
 
-Demo berjalan penuh **tanpa API key apa pun**. Versi online berjalan di Vercel (lihat [Deploy ke Vercel](#deploy-ke-vercel)).
+| | |
+|---|---|
+| Demo online | https://awasana.vercel.app |
+| Halaman operator 112 | https://awasana.vercel.app/operator |
+| Dashboard operator | https://awasana.vercel.app/operator/dashboard |
+| Repositori | https://github.com/seryu77/awasana |
+
+Demo berjalan penuh **tanpa API key apa pun**: semua key bersifat opsional dan setiap fitur punya mode cadangan.
+
+## Daftar isi
+
+1. [Instalasi di localhost](#instalasi-di-localhost)
+2. [Alur demo untuk juri](#alur-demo-untuk-juri-2-menit)
+3. [Environment variables](#environment-variables)
+4. [Arsitektur](#arsitektur) (alur data, struktur folder, API, deploy)
+5. [Sumber data](#sumber-data)
+6. [Verifikasi AI](#verifikasi-ai-anti-false-alarm)
+7. [Integrasi 112](#integrasi-112)
+8. [Pipeline CCTV + computer vision](#pipeline-cctv--computer-vision)
+9. [Catatan teknis](#catatan-teknis)
 
 ---
 
-## Cara menjalankan
+## Instalasi di localhost
 
-Butuh Node 20+ dan Python 3.11+.
+### Prasyarat
 
-### Cara cepat (satu perintah)
+| Perangkat lunak | Versi | Keterangan |
+|---|---|---|
+| Git | apa saja | Untuk clone repositori |
+| Python | 3.11 atau lebih baru | Backend FastAPI (diuji di 3.14) |
+| Node.js + npm | 20 atau lebih baru | Frontend React + Vite (diuji di Node 26) |
+| Ollama | opsional | Hanya untuk verifier Qwen3-VL lokal, lihat [Verifikasi AI](#verifikasi-ai-anti-false-alarm) |
+
+Tidak perlu database terpisah: backend memakai SQLite yang dibuat otomatis di `backend/waspada.db`.
+
+### 1. Clone repositori
 
 ```bash
-cd waspada
+git clone https://github.com/seryu77/awasana.git
+cd awasana
+```
+
+### 2a. Cara cepat (Linux, macOS, WSL)
+
+```bash
 ./dev.sh
 ```
 
-Skrip ini membuat venv dan `npm install` bila belum ada, lalu menyalakan backend (port 8000) dan frontend (port 5173). Buka `http://localhost:5173`. Tekan Ctrl+C untuk mematikan keduanya.
+Skrip ini membuat venv dan menjalankan `npm install` bila belum ada, lalu menyalakan backend (port 8000) dan frontend (port 5173). Buka `http://localhost:5173`. Tekan Ctrl+C untuk mematikan keduanya. Instalasi pertama butuh beberapa menit.
 
-Atau jalankan manual di dua terminal:
+### 2b. Cara manual (dua terminal)
 
-### 1. Backend (FastAPI + WebSocket)
+**Terminal 1, backend (FastAPI + WebSocket):**
 
 ```bash
 cd backend
@@ -31,18 +65,62 @@ cp .env.example .env          # opsional, semua nilai boleh kosong
 .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. Frontend (React + Vite)
+**Terminal 2, frontend (React + Vite):**
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env          # opsional
+cp .env.example .env          # opsional, isi VITE_GOOGLE_MAPS_API_KEY untuk Google Maps
 npm run dev                   # http://localhost:5173
 ```
 
+### 2c. Windows (PowerShell)
+
+`dev.sh` butuh bash, jadi di Windows jalankan manual:
+
+```powershell
+# Terminal 1
+cd backend
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+copy .env.example .env
+.venv\Scripts\uvicorn app.main:app --reload --port 8000
+
+# Terminal 2
+cd frontend
+npm install
+copy .env.example .env
+npm run dev
+```
+
+### 3. Cek instalasi
+
+```bash
+curl http://localhost:8000/api/health     # backend hidup
+```
+
+Lalu buka halaman berikut di browser:
+
+| Halaman | Alamat | Isi |
+|---|---|---|
+| Peta publik | `http://localhost:5173/` | Peta warga, daftar kejadian, Lapor kejadian, tombol Login operator |
+| Operator 112 | `http://localhost:5173/operator` | Antrean operator, kontrol dispatch, video wall CCTV |
+| Dashboard operator | `http://localhost:5173/operator/dashboard` | Antrean kerja, ruang kerja, log aktivitas, pengaturan otomasi |
+| Kontrol demo | `http://localhost:5173/rekam` | Skenario demo yang bisa diulang (kebakaran, kecelakaan, gempa) |
+
 Vite mem-proxy `/api` dan `/ws` ke `http://127.0.0.1:8000`. Kalau backend mati, frontend tetap tampil dengan seed data, simulator lokal, dan banner "Mode offline".
 
-### Alur demo untuk juri (2 menit)
+### Kalau ada masalah
+
+| Gejala | Solusi |
+|---|---|
+| Peta memakai tile gelap biasa, bukan Google Maps | Normal tanpa key. Isi `VITE_GOOGLE_MAPS_API_KEY` di `frontend/.env`, lalu jalankan ulang `npm run dev` |
+| Banner "Mode offline" | Backend belum jalan atau bukan di port 8000. Cek `curl http://localhost:8000/api/health` |
+| Port 8000 atau 5173 sudah dipakai | Matikan proses lain di port itu, atau ganti `--port` backend sekaligus target proxy di `frontend/vite.config.ts` |
+| `pip install` gagal di `opencv-python-headless` | Perbarui pip dulu: `.venv/bin/pip install -U pip`, lalu ulangi |
+| Verifikasi AI berlabel "simulasi" | Normal tanpa model. Isi `QWEN_BASE_URL` untuk memakai Qwen3-VL |
+
+## Alur demo untuk juri (2 menit)
 
 1. Buka `http://localhost:5173`. Peta Indonesia langsung tampil dengan semua peringatan. Indikator **LIVE** di top bar.
 2. Tunggu 20 sampai 30 detik: simulator memunculkan kejadian baru, toast muncul untuk kejadian kritis.
@@ -55,7 +133,7 @@ Vite mem-proxy `/api` dan `/ws` ke `http://127.0.0.1:8000`. Kalau backend mati, 
 8. Klik **Lapor** untuk mengirim laporan warga (jenis, deskripsi, lokasi dari peta atau GPS, foto opsional).
 9. Saat peta di-zoom jauh, CCTV tampil sebagai satu penanda per kota berisi jumlah kamera. Klik penanda itu untuk zoom ke kota tersebut, lalu klik marker **LIVE** untuk menonton CCTV resmi secara langsung. Di halaman operator, tombol **Video wall** menampilkan grid CCTV live per kota (6 per halaman).
 
-### CCTV live dari sumber resmi
+## CCTV live dari sumber resmi
 
 Kamera live diambil hanya dari siaran yang dibuka instansi untuk publik, tanpa token, login, atau menembus pembatasan. Sumbernya didaftarkan di `backend/cctv_sources.json`, lalu `scripts/sync_cctv.py` menguji setiap kamera: harus menyala, servernya mengizinkan diputar dari situs lain (CORS terbuka), dan cukup cepat ditonton (satu segmen video terunduh lebih cepat dari durasi putarnya). Kamera yang gagal diuji ulang sekali.
 
@@ -69,7 +147,7 @@ Kamera live diambil hanya dari siaran yang dibuka instansi untuk publik, tanpa t
 
 Hasil sync terakhir: sekitar 230 kamera live di 6 kota (Jakarta 85, Banjarbaru 50, Banda Aceh 41, Kota Magelang 31, Ciamis 19, Pati 4). Jumlahnya berubah tergantung kamera yang menyala dan kecepatan server pemda saat diuji.
 
-Sumber yang tidak dipakai karena servernya mengunci akses ke domain sendiri: Pelindung Bandung, tol Jasa Marga, Banjarmasin, Banyumas. Untuk memakainya perlu izin pemilik kamera (domain Waspada ditambahkan ke daftar yang diizinkan).
+Sumber yang tidak dipakai karena servernya mengunci akses ke domain sendiri: Pelindung Bandung, tol Jasa Marga, Banjarmasin, Banyumas. Untuk memakainya perlu izin pemilik kamera (domain Awasana ditambahkan ke daftar yang diizinkan).
 
 Perbarui sebelum demo, lalu commit hasilnya:
 
@@ -192,19 +270,19 @@ flowchart LR
   RW -->|/api/*, /ws| BES
   RW -->|selain itu| FES
   USER --> GMAPS
-  USER -->|video langsung dari sumber,<br/>tidak lewat server Waspada| STREAM
+  USER -->|video langsung dari sumber,<br/>tidak lewat server Awasana| STREAM
   VSRV -->|ambil 1 frame per giliran| STREAM
   VSRV -.->|kejadian terdeteksi| BES
 ```
 
-- **Video tidak melewati server Waspada.** Browser memutar HLS atau player embed langsung dari server pemda, jadi Vercel tidak menanggung bandwidth video.
+- **Video tidak melewati server Awasana.** Browser memutar HLS atau player embed langsung dari server pemda, jadi Vercel tidak menanggung bandwidth video.
 - **Computer vision tidak bisa di Vercel** (terlalu berat untuk serverless). Jalankan backend dengan `ENABLE_VISION=true` di laptop, PC, atau server dengan GPU. Garis putus-putus di diagram adalah rencana production: saat ini server vision menjalankan backend lengkapnya sendiri.
 - **Peta ringan:** saat zoom jauh, kamera digabung per kota (`frontend/src/lib/cameraLayout.ts`). Saat zoom dekat, hanya kamera yang terlihat di layar yang digambar. Marker memakai latar solid tanpa blur.
 
 ### Struktur folder
 
 ```
-waspada/
+awasana/
   vercel.json          deploy multi-service: service frontend + backend, rewrites /api dan /ws
   dev.sh               jalankan backend + frontend lokal sekaligus
   frontend/            React + Vite + TS, Tailwind v4, motion, Google Maps / Leaflet
@@ -213,15 +291,22 @@ waspada/
     src/components/    TopBar, LayerPanel, IncidentPanel, IncidentFeed, IncidentDetail, EvidencePanel,
                        DispatchTimeline, CameraPlayer, CameraViewer, VideoWall, BottomSheet, Toasts,
                        Legend, ReportForm
+    src/App.tsx        peta publik dan halaman /operator
+    src/OperatorDashboard.tsx  dashboard operator (/operator/dashboard)
+    src/DemoControl.tsx        kontrol skenario demo (/rekam)
     src/store/         useLiveData: snapshot + WebSocket + fallback offline
     src/lib/           meta bahaya, sort, seed, bounds, camera, cameraLayout, mesin lokal (mode offline)
   backend/
     app/sources/       base.py (interface DataSource), bmkg, firms, petabencana, magma, demo_seed
-    app/llm/           schema (structured output), context (cuaca, laporan terdekat), verifier, heuristic
+    app/llm/           qwen (klien Qwen3-VL), verifier (dua tahap), schema (JSON output), context (cuaca, laporan terdekat), heuristic
     app/dispatch/      base, simulate, webhook, manager (hitung mundur + audit)
     app/vision/        pipeline (worker bergiliran, YOLO + YOLO-World), privacy (blur)
     app/simulator.py   kejadian baru tiap 20-30 detik (hanya di kamera demo)
     app/pipeline.py    kandidat -> verifikasi -> audit -> dispatch
+    app/evidence.py    bukti pendukung untuk operator (cuaca, kualitas udara, kejadian sekitar)
+    app/news.py        cek pemberitaan media tentang kejadian serupa di wilayah yang sama
+    app/demo.py        mode rekam dan skenario demo yang bisa diulang
+    scripts/test_llm.py   uji verifier LLM tanpa menjalankan server
     app/config.py      pengaturan dari env; di Vercel data ditulis ke /tmp/waspada
     cameras.json       daftar kamera (dihasilkan scripts/sync_cctv.py + kamera demo)
     cctv_sources.json  sumber CCTV resmi: toll_pages, hls_pages, restreamers, channels, portals
@@ -235,16 +320,26 @@ waspada/
 
 | Endpoint | Fungsi |
 |---|---|
+| `GET /api/health` | Status server |
 | `GET /api/snapshot` | Semua kejadian, zona, rute, kamera |
-| `WS /ws` | Snapshot saat connect, lalu `incident.upsert`, `camera.update`, `heartbeat` |
+| `GET /api/hotspots` | Titik panas satelit untuk heatmap kebakaran |
+| `WS /ws` | Snapshot saat connect, lalu `incident.upsert`, `camera.update`, `heartbeat`. Operator: `/ws?role=operator` |
+| `GET /api/incidents/{id}/evidence` | Bukti untuk operator: kondisi lokasi (Open-Meteo), kejadian sekitar, kamera, frame deteksi |
 | `POST /api/incidents/{id}/dispatch/confirm` | Operator: kirim sekarang |
 | `POST /api/incidents/{id}/dispatch/cancel` | Operator: batalkan |
+| `POST /api/incidents/{id}/dispatch/manual` | Operator: kirim manual ke 112 |
+| `POST /api/incidents/{id}/resolve` | Operator: tutup kejadian (ditangani, false alarm, duplikat) |
+| `POST /api/incidents/{id}/notes` | Operator: catatan internal, pembaruan publik, atau pertanyaan ke pelapor |
+| `GET /api/automation`, `PUT /api/automation` | Baca dan ubah aturan otomasi (ambang auto-dispatch, hitung mundur, dll.) |
 | `POST /api/reports` | Laporan warga (multipart: `type`, `description`, `lat`, `lng`, `photo` opsional) |
-| `GET /api/incidents/{id}/evidence` | Bukti untuk operator: kondisi lokasi (Open-Meteo), kejadian sekitar, kamera, frame deteksi |
+| `POST /api/reports/{id}/reply` | Balasan pelapor (butuh token laporan) |
 | `GET /api/audit` | Audit log keputusan AI dan operator |
 | `GET /api/frames/{name}` | Frame bukti deteksi CCTV (sudah diblur) |
 | `POST /api/demo/trigger` | Mode demo: buat kejadian kritis CCTV sekarang |
-| `GET /api/health` | Status server |
+| `GET /api/demo/state` | Status mode rekam |
+| `POST /api/demo/recording`, `POST /api/demo/focus` | Nyalakan mode rekam, batasi jenis bahaya yang tampil |
+| `POST /api/demo/scenario/{nama}` | Picu skenario: `fire_auto`, `fire_citizen`, `fire_false`, `accident_auto`, `accident_review`, `quake_auto`, `quake_watch` |
+| `POST /api/demo/reset` | Kembalikan data demo ke awal |
 
 ### Deploy ke Vercel
 
