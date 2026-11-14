@@ -458,3 +458,9 @@ Kamera yang diproses: semua kamera ATCS hasil `scripts/sync_cctv.py` (HLS langsu
 - Kejadian simulasi selesai otomatis setelah 8 menit dan maksimal 12 aktif sekaligus, supaya peta tidak menumpuk saat demo berjalan lama. Pulse hanya untuk kejadian kritis yang belum ditangani.
 - Semua animasi memakai `motion` (`motion/react`) dengan `MotionConfig reducedMotion="user"`; pulse kritis dimatikan saat reduced motion.
 - Design system: `design-system/waspada-nusantara/MASTER.md` (ui-ux-pro-max, density 8, motion 5).
+
+---
+
+## Lisensi
+
+Kode sumber dirilis dengan [lisensi MIT](LICENSE). Data CCTV, peta, dan sumber data pihak ketiga tetap mengikuti ketentuan pemiliknya masing-masing.
